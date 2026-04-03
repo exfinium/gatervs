@@ -3,8 +3,8 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="version" content="gater.vss.0.3">
-    <meta name="version-notes" content="Tidied up show positioning and scaling.">
+    <meta name="version" content="gater.vss.0.4">
+    <meta name="version-notes" content="Switching to CSS Pixel as defult unit for canvas display, added zoom limits and edge clamping to prevent losing the canvas off-screen.">
     <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQAQMAAAAlPW0iAAAABlBMVEUAAAD///+l2
         Z/dAAAAGElEQVQIW2NgAAO7GjDigSKoIIwLkQUDAG+qBKVbIwGvAAAAAElFTkSuQmCC">
     <title>gater</title>
@@ -104,6 +104,7 @@
             const context = /**@type {CanvasRenderingContext2D}*/(canvas.getContext("2d", { alpha: false }));
             const workspace = /**@type {HTMLElement}*/(canvas.parentElement);
             let canvasScale = 1, canvasLeft = 0, canvasTop = 0;
+            let dpr = devicePixelRatio;
 
             window.addEventListener("resize", () => updateCSSPosition());
 
@@ -137,6 +138,12 @@
                 const y = (e.clientY - rect.top) * (canvas.height / rect.height);
                 const derivedScale = (rect.width / canvas.width * devicePixelRatio);
             });
+
+            function roundToDevicePixel(value) {
+                const dpr = devicePixelRatio;
+                return Math.round(value * dpr) / dpr;
+            }
+
             function mousePan(/** @type {PointerEvent} */ e) {
                 if (e.type === "pointermove" && e.buttons === 4) {
                     canvasLeft += e.movementX;
@@ -148,25 +155,24 @@
                 if (!e.ctrlKey) {
                     e.preventDefault();
                     if (e.deltaY === 0) return;
-                    const dpr = devicePixelRatio;
                     const zoomFactor = e.deltaY < 0 ? 2 : 0.5;
-                    const rect = canvas.getBoundingClientRect();
-                    const canvasX = (e.clientX - rect.left) * (dpr / canvasScale);
-                    const canvasY = (e.clientY - rect.top) * (dpr / canvasScale);
+                    const canvasRect = canvas.getBoundingClientRect();
                     const newScale = canvasScale * zoomFactor;
                     if (newScale < 0.02 || newScale > 2000) return; // clamp zoom level
-                    let newLeft = Math.round(e.clientX - canvasX * newScale / dpr) * dpr;
-                    let newTop = Math.round(e.clientY - canvasY * newScale / dpr) * dpr;
-                    if (newLeft / dpr > innerWidth && canvasLeft / dpr > innerWidth
-                        || (newLeft / dpr + canvas.width * newScale / dpr) < 0 && (canvasLeft / dpr + canvas.width * canvasScale / dpr) < 0
-                        || newTop / dpr > innerHeight && canvasTop / dpr > innerHeight
-                        || (newTop / dpr + canvas.height * newScale / dpr) < 0 && (canvasTop / dpr + canvas.height * canvasScale / dpr) < 0
+                    const newLeft = e.clientX - (e.clientX - canvasRect.left) * zoomFactor;
+                    const newTop = e.clientY - (e.clientY - canvasRect.top) * zoomFactor;
+                    const newWidth = canvasRect.width * zoomFactor;
+                    const newHeight = canvasRect.height * zoomFactor;
+                    if (newLeft > innerWidth && canvasLeft > innerWidth
+                        || (newLeft + newWidth) < 0 && (canvasLeft + canvasRect.width) < 0
+                        || newTop > innerHeight && canvasTop > innerHeight
+                        || (newTop + newHeight) < 0 && (canvasTop + canvasRect.height) < 0
                      ) {
                         return; // prevent zooming out beyond the edges
                     }
                     canvasScale = newScale;
-                    canvasLeft = newLeft;
-                    canvasTop = newTop;
+                    canvasLeft = roundToDevicePixel(newLeft);
+                    canvasTop = roundToDevicePixel(newTop);
                     updateCSSPosition();
                 }
             }
@@ -191,10 +197,9 @@
             function centerOnWorkspace() {
                 const dpr = devicePixelRatio;
                 const workspaceRect = workspace.getBoundingClientRect();
-                const canvasCSSWidth = (canvas.width * canvasScale) / dpr;
-                const canvasCSSHeight = (canvas.height * canvasScale) / dpr;
-                canvasLeft = Math.round((workspaceRect.left + (workspaceRect.width - canvasCSSWidth) / 2) * dpr);
-                canvasTop = Math.round((workspaceRect.top + (workspaceRect.height - canvasCSSHeight) / 2) * dpr);
+                const canvasRect = canvas.getBoundingClientRect();
+                canvasLeft = roundToDevicePixel(workspaceRect.left + (workspaceRect.width - canvasRect.width) / 2);
+                canvasTop = roundToDevicePixel(workspaceRect.top + (workspaceRect.height - canvasRect.height) / 2);
                 updateCSSPosition();
             }
             function updateCSSPosition(/** @type {number | null} */ frameTime = null) {
@@ -202,10 +207,19 @@
                     frameTasks.add(updateCSSPosition);
                 } else {
                     frameTasks.delete(updateCSSPosition);
-                    canvas.style.width = `${(canvas.width * canvasScale) / devicePixelRatio}px`;
-                    canvas.style.height = `${(canvas.height * canvasScale) / devicePixelRatio}px`;
-                    canvas.style.left = `${canvasLeft / devicePixelRatio}px`;
-                    canvas.style.top = `${canvasTop / devicePixelRatio}px`;
+                    let left = canvasLeft;
+                    let top = canvasTop;
+                    if (dpr !== devicePixelRatio) {
+                        left = left * (dpr / devicePixelRatio);
+                        top = top * (dpr / devicePixelRatio);
+                        dpr = devicePixelRatio;
+                    }
+                    canvasLeft = roundToDevicePixel(left);
+                    canvasTop = roundToDevicePixel(top);
+                    canvas.style.width = `${canvas.width * canvasScale / dpr}px`;
+                    canvas.style.height = `${canvas.height * canvasScale / dpr}px`;
+                    canvas.style.left = `${canvasLeft}px`;
+                    canvas.style.top = `${canvasTop}px`;
                 }
             }
             return { context, load };
