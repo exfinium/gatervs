@@ -3,7 +3,8 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="version" content="gater.vss.0.2">
+    <meta name="version" content="gater.vss.0.3">
+    <meta name="version-notes" content="Tidied up show positioning and scaling.">
     <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQAQMAAAAlPW0iAAAABlBMVEUAAAD///+l2
         Z/dAAAAGElEQVQIW2NgAAO7GjDigSKoIIwLkQUDAG+qBKVbIwGvAAAAAElFTkSuQmCC">
     <title>gater</title>
@@ -17,7 +18,6 @@
         #uigrid {
             height: calc(100vh - 0px);
             width: calc(100vw - 0px);
-            /* background-color: #364; */
             display: grid;
             grid-template-areas:
                 "lft top rht"
@@ -29,8 +29,6 @@
 
         #workspace {
             grid-area: mid;
-            /* height: calc(100vh - 10px); */
-            /* background-color: #550; */
             margin: 0;
             overflow: hidden;
         }
@@ -39,19 +37,16 @@
             grid-area: top;
             margin: 0;
             padding: 5px;
+            height: 50px;
         }
 
         #maincanvas {
-            position: absolute;
+            position: fixed;
             left: 0;
             top: 0;
             z-index: -1;
-
             image-rendering: pixelated;
-            image-rendering: crisp-edges;
             background-color: #000;
-            transform-origin: 0 0;
-            transform: matrix(1, 0, 0, 1, 0, 0);
         }
 
         #leftbar {
@@ -76,9 +71,7 @@
             display: flex;
             height: 28px;
             padding-block: 2px;
-            /* padding-top: 1px; */
             gap: 2px;
-            /* padding-bottom: 1px; */
             font-size: 24px;
             font-family: monospace;
         }
@@ -97,51 +90,127 @@
         <div id="rightbar" style="background-color: darkgreen;"></div>
         <div id="bottombar" style="background-color: darkblue;"></div>
     </div>
-    <img id="testpattern" style="display: none;" 
-        src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAEABAMAAACuXLVVAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAGUExURQAA
-        AP///6XZn90AAAAJcEhZcwAADsIAAA7CARUoSoAAAAFTSURBVHja7d3dioMwEIDR+AbN+7/sblsQ0f4ESZ0JOd9FEZHMYWtt2ZuU8JZabyWox+yllDjAffay3OI
-        A99nxgPC3IPomVI7qo8B58YD15ZoO8xIA/v8glwJ28wASAMrsn4Lpn4SS1uqmkHUBEgCOR30AjesCpAA8b5T+gKZ1AQAAUgD2R70ATesCJAD4RTQ7QJKkY/VNZ6
-        8DAAAYE9DzHAAAwLiA7YPl07Bv1wEAAAAAAACMC+h1DgAAYEzAq85eBwAAMB5AkiRJkiTJf0gAAADeDTt7DgAAYFzA9sHyadi36wAAAAAAAADGBfQ6BwAAMCbgV
-        WevAwAAGA8gSZqtX32NNK8LkABwPOoDaFwXIAXgeaP0BzStCwAAkAKwP+oFaFoXIAHAL6LZAdK0Xf35OMyLB6wv13SYlwBQbS9of8Nif8O5n4SKzL7n9j2373ls
-        pfwB9tEPAH6fwbsAAAAASUVORK5CYII=">
+    <img id="testpattern" style="display: none;" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAEABAMAAACuXLVVAAAAAXNSR0I
+        Ars4c6QAAAARnQU1BAACxjwv8YQUAAAAGUExURQAAAP///6XZn90AAAAJcEhZcwAADsIAAA7CARUoSoAAAAFTSURBVHja7d3dioMwEIDR+AbN+7/sblsQ0f4ESZ
+        0JOd9FEZHMYWtt2ZuU8JZabyWox+yllDjAffay3OIA99nxgPC3IPomVI7qo8B58YD15ZoO8xIA/v8glwJ28wASAMrsn4Lpn4SS1uqmkHUBEgCOR30AjesCpAA8b
+        5T+gKZ1AQAAUgD2R70ATesCJAD4RTQ7QJKkY/VNZ68DAAAYE9DzHAAAwLiA7YPl07Bv1wEAAAAAAACMC+h1DgAAYEzAq85eBwAAMB5AkiRJkiTJf0gAAADeDTt7
+        DgAAYFzA9sHyadi36wAAAAAAAADGBfQ6BwAAMCbgVWevAwAAGA8gSZqtX32NNK8LkABwPOoDaFwXIAXgeaP0BzStCwAAkAKwP+oFaFoXIAHAL6LZAdK0Xf35OMy
+        LB6wv13SYlwBQbS9of8Nif8O5n4SKzL7n9j2373lspfwB9tEPAH6fwbsAAAAASUVORK5CYII=">
 
     <script>
         // @ts-check
         const show = (function makeShow() {
             const canvas = /**@type {HTMLCanvasElement}*/(document.getElementById("maincanvas"));
             const context = /**@type {CanvasRenderingContext2D}*/(canvas.getContext("2d", { alpha: false }));
-            return { context };
+            const workspace = /**@type {HTMLElement}*/(canvas.parentElement);
+            let canvasScale = 1, canvasLeft = 0, canvasTop = 0;
+
+            window.addEventListener("resize", () => updateCSSPosition());
+
+            const frameTasks = (function makeFrameTasks() {
+                const tasks = new Set();
+                function run(frameTime) {
+                    for (const task of tasks) {
+                        task(frameTime);
+                    }
+                    requestAnimationFrame(run);
+                }
+                requestAnimationFrame(run);
+                return {
+                    add: function addTask(task) {
+                        tasks.add(task);
+                    },
+                    delete: function deleteTask(task) {
+                        tasks.delete(task);
+                    },
+                    clear: function clearTasks() {
+                        tasks.clear();
+                    }
+                };
+            })();
+
+            workspace.addEventListener("wheel", mouseZoom, { passive: false });
+            workspace.addEventListener("pointermove", mousePan);
+            workspace.addEventListener("pointermove", (e) => {
+                const rect = canvas.getBoundingClientRect();
+                const x = (e.clientX - rect.left) * (devicePixelRatio / canvasScale);
+                const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+                const derivedScale = (rect.width / canvas.width * devicePixelRatio);
+            });
+            function mousePan(/** @type {PointerEvent} */ e) {
+                if (e.type === "pointermove" && e.buttons === 4) {
+                    canvasLeft += e.movementX;
+                    canvasTop += e.movementY;
+                    updateCSSPosition();
+                }
+            }
+            function mouseZoom(/** @type {WheelEvent} */ e) {
+                if (!e.ctrlKey) {
+                    e.preventDefault();
+                    if (e.deltaY === 0) return;
+                    const dpr = devicePixelRatio;
+                    const zoomFactor = e.deltaY < 0 ? 2 : 0.5;
+                    const rect = canvas.getBoundingClientRect();
+                    const canvasX = (e.clientX - rect.left) * (dpr / canvasScale);
+                    const canvasY = (e.clientY - rect.top) * (dpr / canvasScale);
+                    const newScale = canvasScale * zoomFactor;
+                    if (newScale < 0.02 || newScale > 2000) return; // clamp zoom level
+                    let newLeft = Math.round(e.clientX - canvasX * newScale / dpr) * dpr;
+                    let newTop = Math.round(e.clientY - canvasY * newScale / dpr) * dpr;
+                    if (newLeft / dpr > innerWidth && canvasLeft / dpr > innerWidth
+                        || (newLeft / dpr + canvas.width * newScale / dpr) < 0 && (canvasLeft / dpr + canvas.width * canvasScale / dpr) < 0
+                        || newTop / dpr > innerHeight && canvasTop / dpr > innerHeight
+                        || (newTop / dpr + canvas.height * newScale / dpr) < 0 && (canvasTop / dpr + canvas.height * canvasScale / dpr) < 0
+                     ) {
+                        return; // prevent zooming out beyond the edges
+                    }
+                    canvasScale = newScale;
+                    canvasLeft = newLeft;
+                    canvasTop = newTop;
+                    updateCSSPosition();
+                }
+            }
+            /**@overload @param {HTMLImageElement} src @returns {void}*/
+            /**@overload @param {ImageData} src @returns {void}*/
+            function load(src) {
+                if (!(src instanceof HTMLImageElement || src instanceof ImageData)) {
+                    throw new TypeError("Unsupported source type");
+                }
+                if (src instanceof HTMLImageElement) {
+                    canvas.width = src.naturalWidth;
+                    canvas.height = src.naturalHeight;
+                    context.drawImage(src, 0, 0);
+                } else if (src instanceof ImageData) {
+                    canvas.width = src.width;
+                    canvas.height = src.height;
+                    context.putImageData(src, 0, 0);
+                }
+                canvasScale = 1;
+                centerOnWorkspace();
+            }
+            function centerOnWorkspace() {
+                const dpr = devicePixelRatio;
+                const workspaceRect = workspace.getBoundingClientRect();
+                const canvasCSSWidth = (canvas.width * canvasScale) / dpr;
+                const canvasCSSHeight = (canvas.height * canvasScale) / dpr;
+                canvasLeft = Math.round((workspaceRect.left + (workspaceRect.width - canvasCSSWidth) / 2) * dpr);
+                canvasTop = Math.round((workspaceRect.top + (workspaceRect.height - canvasCSSHeight) / 2) * dpr);
+                updateCSSPosition();
+            }
+            function updateCSSPosition(/** @type {number | null} */ frameTime = null) {
+                if (!frameTime) {
+                    frameTasks.add(updateCSSPosition);
+                } else {
+                    frameTasks.delete(updateCSSPosition);
+                    canvas.style.width = `${(canvas.width * canvasScale) / devicePixelRatio}px`;
+                    canvas.style.height = `${(canvas.height * canvasScale) / devicePixelRatio}px`;
+                    canvas.style.left = `${canvasLeft / devicePixelRatio}px`;
+                    canvas.style.top = `${canvasTop / devicePixelRatio}px`;
+                }
+            }
+            return { context, load };
         })();
-        var workspace = assertElement("workspace", HTMLDivElement);
-        var main = assertElement("maincanvas", HTMLCanvasElement);
-        var test = assertElement("testpattern", HTMLImageElement);
-        var ctxt = assertContext(main, "2d");
-        main.width = test.width;
-        main.height = test.height;
-        ctxt.drawImage(test, 0, 0);
-        window.onresize = () => {
-            const scale = 7;
-            main.style.left = `${50 / devicePixelRatio}px`;
-            main.style.top = `${150 / devicePixelRatio}px`;
-            main.style.width = `${main.width * scale / devicePixelRatio}px`;
-            main.style.height = `${main.height * scale / devicePixelRatio}px`;
-        };
-        window.dispatchEvent(new Event("resize"));
-
-        /**@overload @param {string} id @param {typeof HTMLImageElement}  constructor @returns {HTMLImageElement}*/
-        /**@overload @param {string} id @param {typeof HTMLDivElement}    constructor @returns {HTMLDivElement}*/
-        /**@overload @param {string} id @param {typeof HTMLCanvasElement} constructor @returns {HTMLCanvasElement}*/
-        function assertElement(id, constructor) {
-            const el = document.getElementById(id);
-            if (!(el instanceof constructor)) { throw new TypeError(`Element "${id}" is not a ${constructor.name}`); }
-            return el;
-        }
-        function assertContext(canvas, contextType) {
-            const ctx = canvas.getContext(contextType);
-            if (!(ctx instanceof CanvasRenderingContext2D)) { throw new TypeError(`Could not get 2d context`); }
-            return ctx;
-        }
-
+        show.load(/**@type {HTMLImageElement}*/(document.getElementById("testpattern")));
     </script>
 </body>
 
