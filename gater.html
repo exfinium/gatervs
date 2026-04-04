@@ -3,8 +3,8 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="version" content="gater.vss.0.5.0">
-    <meta name="version-notes" content="Added file module.">
+    <meta name="version" content="gater.vss.0.6.0">
+    <meta name="version-notes" content="Streamlined positioning around posit().">
     <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQAQMAAAAlPW0iAAAABlBMVEUAAAD///+l2
         Z/dAAAAGElEQVQIW2NgAAO7GjDigSKoIIwLkQUDAG+qBKVbIwGvAAAAAElFTkSuQmCC">
     <title>gater</title>
@@ -134,42 +134,28 @@
                 pointer.canvasY = Math.floor((e.clientY - rect.top) * (canvas.height / rect.height));
                 pointer.canvasHit = pointer.canvasX >= 0 && pointer.canvasX < canvas.width
                     && pointer.canvasY >= 0 && pointer.canvasY < canvas.height;
-                pointer.canvasIndex = pointer.canvasHit ? (pointer.canvasY * canvas.width + pointer.canvasX) : 0;
-            }
-            function roundToDevicePixel(value) {
-                const dpr = devicePixelRatio;
-                return Math.round(value * dpr) / dpr;
+                pointer.canvasIndex = pointer.canvasHit ? (pointer.canvasY * canvas.width + pointer.canvasX) : -1;
             }
             function mousePan(/** @type {PointerEvent} */ e) {
                 if (e.type === "pointermove" && e.buttons === 4) {
-                    canvasLeft += e.movementX * 4 / dpr;
-                    canvasTop += e.movementY * 4 / dpr;
-                    updateCSSPosition();
+                    const newLeft = canvasLeft + e.movementX * 4 / dpr;
+                    const newTop = canvasTop + e.movementY * 4 / dpr;
+                    posit(newLeft, newTop);
                 }
             }
             function mouseZoom(/** @type {WheelEvent} */ e) {
                 if (!e.ctrlKey) {
                     e.preventDefault();
                     if (e.deltaY === 0) return;
-                    const zoomFactor = e.deltaY < 0 ? 2 : 0.5;
-                    const canvasRect = canvas.getBoundingClientRect();
+                    const z = e.shiftKey ? 1.2 : 2;
+                    const zoomFactor = e.deltaY < 0 ? z : 1 / z;
                     const newScale = canvasScale * zoomFactor;
                     if (newScale < 0.02 || newScale > 2000) return; // clamp zoom level
-                    const newLeft = e.clientX - (e.clientX - canvasRect.left) * zoomFactor;
-                    const newTop = e.clientY - (e.clientY - canvasRect.top) * zoomFactor;
-                    const newWidth = canvasRect.width * zoomFactor;
-                    const newHeight = canvasRect.height * zoomFactor;
-                    if (newLeft > innerWidth && canvasLeft > innerWidth
-                        || (newLeft + newWidth) < 0 && (canvasLeft + canvasRect.width) < 0
-                        || newTop > innerHeight && canvasTop > innerHeight
-                        || (newTop + newHeight) < 0 && (canvasTop + canvasRect.height) < 0
-                    ) {
-                        return; // prevent zooming out beyond the edges
-                    }
-                    canvasScale = newScale;
-                    canvasLeft = roundToDevicePixel(newLeft);
-                    canvasTop = roundToDevicePixel(newTop);
-                    updateCSSPosition();
+                    const newLeft = e.clientX - (e.clientX - canvasLeft) * zoomFactor;
+                    const newTop = e.clientY - (e.clientY - canvasTop) * zoomFactor;
+                    const newWidth = (canvas.width * canvasScale / dpr) * zoomFactor;
+                    const newHeight = (canvas.height * canvasScale / dpr) * zoomFactor;
+                    posit(newLeft, newTop, newScale);
                 }
             }
             function load(/** @type {ImageData} */ src) {
@@ -180,30 +166,42 @@
                 centerCanvasOnWorkspace();
             }
             function centerCanvasOnWorkspace() {
-                const workspaceRect = workspace.getBoundingClientRect();
-                const canvasRect = canvas.getBoundingClientRect();
-                const canvasCSSWidth = (canvas.width * canvasScale) / dpr;
-                const canvasCSSHeight = (canvas.height * canvasScale) / dpr;
-                canvasLeft = Math.round((workspaceRect.left + (workspaceRect.width - canvasCSSWidth) / 2));
-                canvasTop = Math.round((workspaceRect.top + (workspaceRect.height - canvasCSSHeight) / 2));
-
-
-                updateCSSPosition();
+                const rect = workspace.getBoundingClientRect();
+                const width = (canvas.width * canvasScale) / dpr;
+                const height = (canvas.height * canvasScale) / dpr;
+                const newLeft = rect.left + (rect.width - width) / 2;
+                const newTop = rect.top + (rect.height - height) / 2;
+                posit(newLeft, newTop, canvasScale);
             }
-            function updateCSSPosition(/** @type {number | null} */ frameTime = null) {
-                if (!frameTime) {
-                    frameTasks.add(updateCSSPosition);
-                } else {
-                    frameTasks.delete(updateCSSPosition);
-                    if (dpr !== devicePixelRatio) {
-                        canvasLeft = roundToDevicePixel(canvasLeft * (dpr / devicePixelRatio));
-                        canvasTop = roundToDevicePixel(canvasTop * (dpr / devicePixelRatio));
-                        dpr = devicePixelRatio;
-                    }
+            function posit(left = canvasLeft, top = canvasTop, scale = canvasScale) {
+                if (dpr !== devicePixelRatio) {
+                    left = left * (dpr / devicePixelRatio);
+                    top = top * (dpr / devicePixelRatio);
+                    dpr = devicePixelRatio;
+                }
+                const right = left + (canvas.width * scale / dpr);
+                const bottom = top + (canvas.height * scale / dpr);
+                const canvasRight = canvasLeft + (canvas.width * canvasScale / dpr);
+                const canvasBottom = canvasTop + (canvas.height * canvasScale / dpr);
+                if (!(left > canvasLeft && canvasLeft > innerWidth
+                    || right < canvasRight && canvasRight < 0
+                    || top > canvasTop && canvasTop > innerHeight
+                    || bottom < canvasBottom && canvasBottom < 0
+                )) {
+                    canvasLeft = left;
+                    canvasTop = top;
+                    canvasScale = scale;
+                    frameTasks.add(updatePosition);
+                }
+                function roundToDevicePixel(value) {
+                    return Math.round(value * dpr) / dpr;
+                }
+                function updatePosition() {
+                    frameTasks.delete(updatePosition);
                     canvas.style.width = `${canvas.width * canvasScale / dpr}px`;
                     canvas.style.height = `${canvas.height * canvasScale / dpr}px`;
-                    canvas.style.left = `${canvasLeft}px`;
-                    canvas.style.top = `${canvasTop}px`;
+                    canvas.style.left = `${roundToDevicePixel(canvasLeft)}px`;
+                    canvas.style.top = `${roundToDevicePixel(canvasTop)}px`;
                 }
             }
             function put(/** @type {ImageData|null} */ pixelData = null) {
@@ -218,7 +216,7 @@
             }
             workspace.addEventListener("wheel", mouseZoom, { passive: false });
             workspace.addEventListener("pointermove", (ev) => { pointerSave(ev); mousePan(ev); });
-            window.addEventListener("resize", () => updateCSSPosition());
+            window.addEventListener("resize", () => posit());
             return { load, put, pointer };
         })();
         const file = (function makeFile() {
@@ -233,9 +231,7 @@
             function init() {
                 loadTestPattern();
             }
-            return {
-                init
-            };
+            return {init};
         })();
         // show.load(/**@type {HTMLImageElement}*/(document.getElementById("testpattern")));
         file.init();
