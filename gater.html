@@ -3,8 +3,8 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="version" content="gater.vss.0.7.5">
-    <meta name="version-notes" content="Fixed FrameTasks leak. Tweaked put() behaviour.">
+    <meta name="version" content="gater.vss.0.7.6">
+    <meta name="version-notes" content="Little bit.">
     <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQAQMAAAAlPW0iAAAABlBMVEUAAAD///+l2
         Z/dAAAAGElEQVQIW2NgAAO7GjDigSKoIIwLkQUDAG+qBKVbIwGvAAAAAElFTkSuQmCC">
     <title>gater</title>
@@ -110,15 +110,11 @@
             const addFrameTask = (function FrameTasks() {
                 const tasks = new Map();
                 requestAnimationFrame(run);
-                return (function add(/** @type {string} */ name, /** @type {Function} */ task) {
-                    tasks.set(name, task);
-                });
-                function run(frameTime) {
-                    for (const [id, task] of tasks) {
-                        task(frameTime);
-                    }
-                    tasks.clear();
+                return (name, task) => tasks.set(name, task);
+                function run() {
                     requestAnimationFrame(run);
+                    for (const [name, task] of tasks) task();
+                    tasks.clear();
                 }
             })();
 
