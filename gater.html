@@ -3,8 +3,8 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="version" content="gater.vss.0.4">
-    <meta name="version-notes" content="Switching to CSS Pixel as defult unit for canvas display, added zoom limits and edge clamping to prevent losing the canvas off-screen.">
+    <meta name="version" content="gater.vss.0.4.1">
+    <meta name="version-notes" content="Added some acceleration to mousePan. Added mouse position saving.">
     <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQAQMAAAAlPW0iAAAABlBMVEUAAAD///+l2
         Z/dAAAAGElEQVQIW2NgAAO7GjDigSKoIIwLkQUDAG+qBKVbIwGvAAAAAElFTkSuQmCC">
     <title>gater</title>
@@ -103,11 +103,9 @@
             const canvas = /**@type {HTMLCanvasElement}*/(document.getElementById("maincanvas"));
             const context = /**@type {CanvasRenderingContext2D}*/(canvas.getContext("2d", { alpha: false }));
             const workspace = /**@type {HTMLElement}*/(canvas.parentElement);
+            let pointer = { ev: new PointerEvent('pointermove'), canvasX: 0, canvasY: 0, canvasHit: false, canvasIndex: 0 };
             let canvasScale = 1, canvasLeft = 0, canvasTop = 0;
             let dpr = devicePixelRatio;
-
-            window.addEventListener("resize", () => updateCSSPosition());
-
             const frameTasks = (function makeFrameTasks() {
                 const tasks = new Set();
                 function run(frameTime) {
@@ -130,24 +128,22 @@
                 };
             })();
 
-            workspace.addEventListener("wheel", mouseZoom, { passive: false });
-            workspace.addEventListener("pointermove", mousePan);
-            workspace.addEventListener("pointermove", (e) => {
+            function pointerSave(/** @type {PointerEvent} */ e) {
                 const rect = canvas.getBoundingClientRect();
-                const x = (e.clientX - rect.left) * (devicePixelRatio / canvasScale);
-                const y = (e.clientY - rect.top) * (canvas.height / rect.height);
-                const derivedScale = (rect.width / canvas.width * devicePixelRatio);
-            });
-
+                pointer.canvasX = Math.floor((e.clientX - rect.left) * (canvas.width / rect.width));
+                pointer.canvasY = Math.floor((e.clientY - rect.top) * (canvas.height / rect.height));
+                pointer.canvasHit = pointer.canvasX >= 0 && pointer.canvasX < canvas.width
+                    && pointer.canvasY >= 0 && pointer.canvasY < canvas.height;
+                pointer.canvasIndex = pointer.canvasHit ? (pointer.canvasY * canvas.width + pointer.canvasX) : 0;
+            }
             function roundToDevicePixel(value) {
                 const dpr = devicePixelRatio;
                 return Math.round(value * dpr) / dpr;
             }
-
             function mousePan(/** @type {PointerEvent} */ e) {
                 if (e.type === "pointermove" && e.buttons === 4) {
-                    canvasLeft += e.movementX;
-                    canvasTop += e.movementY;
+                    canvasLeft += e.movementX * 4 / dpr;
+                    canvasTop += e.movementY * 4 / dpr;
                     updateCSSPosition();
                 }
             }
@@ -167,7 +163,7 @@
                         || (newLeft + newWidth) < 0 && (canvasLeft + canvasRect.width) < 0
                         || newTop > innerHeight && canvasTop > innerHeight
                         || (newTop + newHeight) < 0 && (canvasTop + canvasRect.height) < 0
-                     ) {
+                    ) {
                         return; // prevent zooming out beyond the edges
                     }
                     canvasScale = newScale;
@@ -192,10 +188,9 @@
                     context.putImageData(src, 0, 0);
                 }
                 canvasScale = 1;
-                centerOnWorkspace();
+                centerCanvasOnWorkspace();
             }
-            function centerOnWorkspace() {
-                const dpr = devicePixelRatio;
+            function centerCanvasOnWorkspace() {
                 const workspaceRect = workspace.getBoundingClientRect();
                 const canvasRect = canvas.getBoundingClientRect();
                 canvasLeft = roundToDevicePixel(workspaceRect.left + (workspaceRect.width - canvasRect.width) / 2);
@@ -207,21 +202,20 @@
                     frameTasks.add(updateCSSPosition);
                 } else {
                     frameTasks.delete(updateCSSPosition);
-                    let left = canvasLeft;
-                    let top = canvasTop;
                     if (dpr !== devicePixelRatio) {
-                        left = left * (dpr / devicePixelRatio);
-                        top = top * (dpr / devicePixelRatio);
+                        canvasLeft = roundToDevicePixel(canvasLeft * (dpr / devicePixelRatio));
+                        canvasTop = roundToDevicePixel(canvasTop * (dpr / devicePixelRatio));
                         dpr = devicePixelRatio;
                     }
-                    canvasLeft = roundToDevicePixel(left);
-                    canvasTop = roundToDevicePixel(top);
                     canvas.style.width = `${canvas.width * canvasScale / dpr}px`;
                     canvas.style.height = `${canvas.height * canvasScale / dpr}px`;
                     canvas.style.left = `${canvasLeft}px`;
                     canvas.style.top = `${canvasTop}px`;
                 }
             }
+            workspace.addEventListener("wheel", mouseZoom, { passive: false });
+            workspace.addEventListener("pointermove", (ev) => {pointerSave(ev); mousePan(ev);});
+            window.addEventListener("resize", () => updateCSSPosition());
             return { context, load };
         })();
         show.load(/**@type {HTMLImageElement}*/(document.getElementById("testpattern")));
