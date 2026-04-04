@@ -3,8 +3,8 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="version" content="gater.vss.0.4.1">
-    <meta name="version-notes" content="Added some acceleration to mousePan. Added mouse position saving.">
+    <meta name="version" content="gater.vss.0.5.0">
+    <meta name="version-notes" content="Added file module.">
     <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQAQMAAAAlPW0iAAAABlBMVEUAAAD///+l2
         Z/dAAAAGElEQVQIW2NgAAO7GjDigSKoIIwLkQUDAG+qBKVbIwGvAAAAAElFTkSuQmCC">
     <title>gater</title>
@@ -105,6 +105,7 @@
             const workspace = /**@type {HTMLElement}*/(canvas.parentElement);
             let pointer = { ev: new PointerEvent('pointermove'), canvasX: 0, canvasY: 0, canvasHit: false, canvasIndex: 0 };
             let canvasScale = 1, canvasLeft = 0, canvasTop = 0;
+            let canvasImageData = context.getImageData(0, 0, canvas.width, canvas.height);
             let dpr = devicePixelRatio;
             const frameTasks = (function makeFrameTasks() {
                 const tasks = new Set();
@@ -127,7 +128,6 @@
                     }
                 };
             })();
-
             function pointerSave(/** @type {PointerEvent} */ e) {
                 const rect = canvas.getBoundingClientRect();
                 pointer.canvasX = Math.floor((e.clientX - rect.left) * (canvas.width / rect.width));
@@ -172,29 +172,22 @@
                     updateCSSPosition();
                 }
             }
-            /**@overload @param {HTMLImageElement} src @returns {void}*/
-            /**@overload @param {ImageData} src @returns {void}*/
-            function load(src) {
-                if (!(src instanceof HTMLImageElement || src instanceof ImageData)) {
-                    throw new TypeError("Unsupported source type");
-                }
-                if (src instanceof HTMLImageElement) {
-                    canvas.width = src.naturalWidth;
-                    canvas.height = src.naturalHeight;
-                    context.drawImage(src, 0, 0);
-                } else if (src instanceof ImageData) {
-                    canvas.width = src.width;
-                    canvas.height = src.height;
-                    context.putImageData(src, 0, 0);
-                }
+            function load(/** @type {ImageData} */ src) {
+                canvas.width = src.width;
+                canvas.height = src.height;
+                put(src);
                 canvasScale = 1;
                 centerCanvasOnWorkspace();
             }
             function centerCanvasOnWorkspace() {
                 const workspaceRect = workspace.getBoundingClientRect();
                 const canvasRect = canvas.getBoundingClientRect();
-                canvasLeft = roundToDevicePixel(workspaceRect.left + (workspaceRect.width - canvasRect.width) / 2);
-                canvasTop = roundToDevicePixel(workspaceRect.top + (workspaceRect.height - canvasRect.height) / 2);
+                const canvasCSSWidth = (canvas.width * canvasScale) / dpr;
+                const canvasCSSHeight = (canvas.height * canvasScale) / dpr;
+                canvasLeft = Math.round((workspaceRect.left + (workspaceRect.width - canvasCSSWidth) / 2));
+                canvasTop = Math.round((workspaceRect.top + (workspaceRect.height - canvasCSSHeight) / 2));
+
+
                 updateCSSPosition();
             }
             function updateCSSPosition(/** @type {number | null} */ frameTime = null) {
@@ -213,12 +206,39 @@
                     canvas.style.top = `${canvasTop}px`;
                 }
             }
+            function put(/** @type {ImageData|null} */ pixelData = null) {
+                if (pixelData) {
+                    canvasImageData = pixelData;
+                }
+                frameTasks.add(updatePixels);
+                function updatePixels() {
+                    frameTasks.delete(updatePixels);
+                    context.putImageData(canvasImageData, 0, 0);
+                }
+            }
             workspace.addEventListener("wheel", mouseZoom, { passive: false });
-            workspace.addEventListener("pointermove", (ev) => {pointerSave(ev); mousePan(ev);});
+            workspace.addEventListener("pointermove", (ev) => { pointerSave(ev); mousePan(ev); });
             window.addEventListener("resize", () => updateCSSPosition());
-            return { context, load };
+            return { load, put, pointer };
         })();
-        show.load(/**@type {HTMLImageElement}*/(document.getElementById("testpattern")));
+        const file = (function makeFile() {
+            function loadTestPattern() {
+                const testPattern = /**@type {HTMLImageElement}*/(document.getElementById("testpattern"));
+                const bgContext = /**@type {CanvasRenderingContext2D}*/(document.createElement("canvas").getContext("2d"));
+                bgContext.canvas.width = testPattern.naturalWidth;
+                bgContext.canvas.height = testPattern.naturalHeight;
+                bgContext.drawImage(testPattern, 0, 0);
+                show.load(bgContext.getImageData(0, 0, bgContext.canvas.width, bgContext.canvas.height));
+            }
+            function init() {
+                loadTestPattern();
+            }
+            return {
+                init
+            };
+        })();
+        // show.load(/**@type {HTMLImageElement}*/(document.getElementById("testpattern")));
+        file.init();
     </script>
 </body>
 
