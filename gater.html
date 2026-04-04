@@ -3,8 +3,8 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="version" content="gater.vss.0.7.1">
-    <meta name="version-notes" content="Implemented IndexedDB support. Added orch module to coordinate other modules.">
+    <meta name="version" content="gater.vss.0.7.3">
+    <meta name="version-notes" content="Little bits.">
     <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQAQMAAAAlPW0iAAAABlBMVEUAAAD///+l2
         Z/dAAAAGElEQVQIW2NgAAO7GjDigSKoIIwLkQUDAG+qBKVbIwGvAAAAAElFTkSuQmCC">
     <title>gater</title>
@@ -105,7 +105,7 @@
             const workspace = /**@type {HTMLElement}*/(canvas.parentElement);
             let pointer = { ev: new PointerEvent('pointermove'), canvasX: 0, canvasY: 0, canvasHit: false, canvasIndex: 0 };
             let canvasScale = 1, canvasLeft = 0, canvasTop = 0;
-            let canvasImageData = context.getImageData(0, 0, canvas.width, canvas.height);
+            let /**@type {ImageData}*/ canvasImageData;
             let dpr = devicePixelRatio;
             const frameTasks = (function makeFrameTasks() {
                 const tasks = new Set();
@@ -128,31 +128,32 @@
                     }
                 };
             })();
-            function pointerSave(/** @type {PointerEvent} */ e) {
+            function pointerSave(/** @type {PointerEvent} */ ev) {
                 const rect = canvas.getBoundingClientRect();
-                pointer.canvasX = Math.floor((e.clientX - rect.left) * (canvas.width / rect.width));
-                pointer.canvasY = Math.floor((e.clientY - rect.top) * (canvas.height / rect.height));
+                pointer.ev = ev;
+                pointer.canvasX = Math.floor((ev.clientX - rect.left) * (canvas.width / rect.width));
+                pointer.canvasY = Math.floor((ev.clientY - rect.top) * (canvas.height / rect.height));
                 pointer.canvasHit = pointer.canvasX >= 0 && pointer.canvasX < canvas.width
                     && pointer.canvasY >= 0 && pointer.canvasY < canvas.height;
                 pointer.canvasIndex = pointer.canvasHit ? (pointer.canvasY * canvas.width + pointer.canvasX) : -1;
             }
-            function mousePan(/** @type {PointerEvent} */ e) {
-                if (e.type === "pointermove" && e.buttons === 4) {
-                    const newLeft = canvasLeft + e.movementX * 4 / dpr;
-                    const newTop = canvasTop + e.movementY * 4 / dpr;
+            function mousePan(/** @type {PointerEvent} */ ev) {
+                if (ev.type === "pointermove" && ev.buttons === 4) {
+                    const newLeft = canvasLeft + ev.movementX * 4 / dpr;
+                    const newTop = canvasTop + ev.movementY * 4 / dpr;
                     posit(newLeft, newTop);
                 }
             }
-            function mouseZoom(/** @type {WheelEvent} */ e) {
-                if (!e.ctrlKey) {
-                    e.preventDefault();
-                    if (e.deltaY === 0) return;
-                    const z = e.shiftKey ? 1.2 : 2;
-                    const zoomFactor = e.deltaY < 0 ? z : 1 / z;
+            function mouseZoom(/** @type {WheelEvent} */ ev) {
+                if (!ev.ctrlKey) {
+                    ev.preventDefault();
+                    if (ev.deltaY === 0) return;
+                    const z = ev.shiftKey ? 1.2 : 2;
+                    const zoomFactor = ev.deltaY < 0 ? z : 1 / z;
                     const newScale = canvasScale * zoomFactor;
                     if (newScale < 0.02 || newScale > 2000) return; // clamp zoom level
-                    const newLeft = e.clientX - (e.clientX - canvasLeft) * zoomFactor;
-                    const newTop = e.clientY - (e.clientY - canvasTop) * zoomFactor;
+                    const newLeft = ev.clientX - (ev.clientX - canvasLeft) * zoomFactor;
+                    const newTop = ev.clientY - (ev.clientY - canvasTop) * zoomFactor;
                     const newWidth = (canvas.width * canvasScale / dpr) * zoomFactor;
                     const newHeight = (canvas.height * canvasScale / dpr) * zoomFactor;
                     posit(newLeft, newTop, newScale);
@@ -224,7 +225,8 @@
         })();
 
         const file = (function File() {
-            let /**@type {IDBDatabase}*/db
+            let /**@type {ImageData}*/ currentImd;
+            let /**@type {IDBDatabase}*/ db
             (function DB() {
                 const request = indexedDB.open("gaterdb", 1);
                 let upgrading = false;
@@ -240,13 +242,13 @@
                         console.info("Database upgrade complete. Loading default art.", ev);
                         const imd = loadTestPattern();
                         dbSetPersistImd1(imd);
-                        orch.load(imd);
+                        loadImd(imd);
                     } else {
                         console.info("Database opened successfully. Loading saved art", db);
                         dbGetPersistImd1().onsuccess = ev => {
-                            const imd = /**@type {ImageData}*/(/**@type {IDBRequest}*/(ev.target).result);
+                            const imd = /**@type {IDBRequest}*/(ev.target).result;
                             if (imd instanceof ImageData) {
-                                orch.load(imd);
+                                loadImd(imd);
                             } else {
                                 console.error("No image data found in database. Possible corruption.", ev);
                             }
@@ -256,19 +258,24 @@
             })();
             function dbGet(storeName, key) {
                 const request = db.transaction(storeName, 'readonly').objectStore(storeName).get(key);
-                request.onerror = e => console.error(`Error getting key ${key} from store ${storeName}:`, request.error);
+                request.onerror = ev => console.error(`Error getting key ${key} from store ${storeName}:`, request.error);
                 return request;
             }
             function dbPut(storeName, key, value) {
                 const request = db.transaction(storeName, 'readwrite').objectStore(storeName).put(value, key);
-                request.onerror = () => console.error(`Error putting key ${key} into store ${storeName}:`, request.error);
+                request.onerror = ev => console.error(`Error putting key ${key} into store ${storeName}:`, request.error);
                 return request;
             }
             function dbGetPersistImd1() {
                 return /**@type {IDBRequest<ImageData>}*/(dbGet('persistImd', 1));
             }
-            function dbSetPersistImd1(imd) {
+            function dbSetPersistImd1(/**@type {ImageData}*/imd) {
                 return dbPut('persistImd', 1, imd);
+            }
+            function loadImd(/**@type {ImageData}*/imd) {
+                // loadImd: Entry point that effectively restarts the app with new source data.
+                currentImd = imd;
+                show.load(imd);
             }
 
             function loadTestPattern() {
@@ -281,14 +288,6 @@
                 return imd;
             }
             return {};
-        })();
-
-        const orch = (function Orch() {
-            // file module will call load() with initial image data once it's ready
-            function load(/**@type {ImageData} */ imd) {
-                show.load(imd);
-            }
-            return { load };
         })();
 
     </script>
