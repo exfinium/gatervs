@@ -3,8 +3,8 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="version" content="gater.vss.0.7.4">
-    <meta name="version-notes" content="Show tidy.">
+    <meta name="version" content="gater.vss.0.7.5">
+    <meta name="version-notes" content="Fixed FrameTasks leak. Tweaked put() behaviour.">
     <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQAQMAAAAlPW0iAAAABlBMVEUAAAD///+l2
         Z/dAAAAGElEQVQIW2NgAAO7GjDigSKoIIwLkQUDAG+qBKVbIwGvAAAAAElFTkSuQmCC">
     <title>gater</title>
@@ -107,30 +107,23 @@
             let canvasScale = 1, canvasLeft = 0, canvasTop = 0;
             let /**@type {ImageData}*/ canvasImageData;
             let dpr = devicePixelRatio;
-            const frameTasks = (function makeFrameTasks() {
-                const tasks = new Set();
+            const addFrameTask = (function FrameTasks() {
+                const tasks = new Map();
+                requestAnimationFrame(run);
+                return (function add(/** @type {string} */ name, /** @type {Function} */ task) {
+                    tasks.set(name, task);
+                });
                 function run(frameTime) {
-                    for (const task of tasks) {
+                    for (const [id, task] of tasks) {
                         task(frameTime);
                     }
+                    tasks.clear();
                     requestAnimationFrame(run);
                 }
-                requestAnimationFrame(run);
-                return {
-                    add: function addTask(task) {
-                        tasks.add(task);
-                    },
-                    delete: function deleteTask(task) {
-                        tasks.delete(task);
-                    },
-                    clear: function clearTasks() {
-                        tasks.clear();
-                    }
-                };
             })();
 
             workspace.addEventListener("wheel", mouseZoom, { passive: false });
-            workspace.addEventListener("pointermove", (ev) => { pointerSave(ev); mousePan(ev); });
+            workspace.addEventListener("pointermove", ev => { pointerSave(ev); mousePan(ev); });
             window.addEventListener("resize", () => posit());
             return { load, put, pointer, getImageData };
 
@@ -168,7 +161,8 @@
                 canvas.width = src.width;
                 canvas.height = src.height;
                 canvasScale = 1;
-                put(src);
+                canvasImageData = src;
+                put();
                 centerCanvasOnWorkspace();
             }
             function centerCanvasOnWorkspace() {
@@ -197,28 +191,22 @@
                     canvasLeft = left;
                     canvasTop = top;
                     canvasScale = scale;
-                    frameTasks.add(updatePosition);
+                    addFrameTask("updatePosition", () => {
+                        canvas.style.width = `${canvas.width * canvasScale / dpr}px`;
+                        canvas.style.height = `${canvas.height * canvasScale / dpr}px`;
+                        canvas.style.left = `${roundToDevicePixel(canvasLeft)}px`;
+                        canvas.style.top = `${roundToDevicePixel(canvasTop)}px`;
+                    });
                 }
                 function roundToDevicePixel(value) {
                     return Math.round(value * dpr) / dpr;
                 }
-                function updatePosition() {
-                    frameTasks.delete(updatePosition);
-                    canvas.style.width = `${canvas.width * canvasScale / dpr}px`;
-                    canvas.style.height = `${canvas.height * canvasScale / dpr}px`;
-                    canvas.style.left = `${roundToDevicePixel(canvasLeft)}px`;
-                    canvas.style.top = `${roundToDevicePixel(canvasTop)}px`;
-                }
             }
             function put(/** @type {ImageData|null} */ pixelData = null) {
-                if (pixelData) {
-                    canvasImageData = pixelData;
+                if (!pixelData) {
+                    pixelData = canvasImageData;
                 }
-                frameTasks.add(updatePixels);
-                function updatePixels() {
-                    frameTasks.delete(updatePixels);
-                    context.putImageData(canvasImageData, 0, 0);
-                }
+                addFrameTask("updatePixels", () => context.putImageData(pixelData, 0, 0));
             }
             function getImageData() {
                 return canvasImageData;
