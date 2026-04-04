@@ -3,8 +3,8 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="version" content="gater.vss.0.7.3">
-    <meta name="version-notes" content="Little bits.">
+    <meta name="version" content="gater.vss.0.7.4">
+    <meta name="version-notes" content="Show tidy.">
     <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQAQMAAAAlPW0iAAAABlBMVEUAAAD///+l2
         Z/dAAAAGElEQVQIW2NgAAO7GjDigSKoIIwLkQUDAG+qBKVbIwGvAAAAAElFTkSuQmCC">
     <title>gater</title>
@@ -103,7 +103,7 @@
             const canvas = /**@type {HTMLCanvasElement}*/(document.getElementById("maincanvas"));
             const context = /**@type {CanvasRenderingContext2D}*/(canvas.getContext("2d", { alpha: false }));
             const workspace = /**@type {HTMLElement}*/(canvas.parentElement);
-            let pointer = { ev: new PointerEvent('pointermove'), canvasX: 0, canvasY: 0, canvasHit: false, canvasIndex: 0 };
+            let pointer = { ev: new PointerEvent('pointermove'), cnvX: 0, cnvY: 0, cnvHit: false, cnvIndex: 0 };
             let canvasScale = 1, canvasLeft = 0, canvasTop = 0;
             let /**@type {ImageData}*/ canvasImageData;
             let dpr = devicePixelRatio;
@@ -128,14 +128,19 @@
                     }
                 };
             })();
+
+            workspace.addEventListener("wheel", mouseZoom, { passive: false });
+            workspace.addEventListener("pointermove", (ev) => { pointerSave(ev); mousePan(ev); });
+            window.addEventListener("resize", () => posit());
+            return { load, put, pointer, getImageData };
+
             function pointerSave(/** @type {PointerEvent} */ ev) {
                 const rect = canvas.getBoundingClientRect();
-                pointer.ev = ev;
-                pointer.canvasX = Math.floor((ev.clientX - rect.left) * (canvas.width / rect.width));
-                pointer.canvasY = Math.floor((ev.clientY - rect.top) * (canvas.height / rect.height));
-                pointer.canvasHit = pointer.canvasX >= 0 && pointer.canvasX < canvas.width
-                    && pointer.canvasY >= 0 && pointer.canvasY < canvas.height;
-                pointer.canvasIndex = pointer.canvasHit ? (pointer.canvasY * canvas.width + pointer.canvasX) : -1;
+                const cnvX = Math.floor((ev.clientX - rect.left) * (canvas.width / rect.width));
+                const cnvY = Math.floor((ev.clientY - rect.top) * (canvas.height / rect.height));
+                const cnvHit = cnvX >= 0 && cnvX < canvas.width && cnvY >= 0 && cnvY < canvas.height;
+                const cnvIndex = cnvHit ? (cnvY * canvas.width + cnvX) : -1;
+                pointer = { ev, cnvX, cnvY, cnvHit, cnvIndex };
             }
             function mousePan(/** @type {PointerEvent} */ ev) {
                 if (ev.type === "pointermove" && ev.buttons === 4) {
@@ -162,8 +167,8 @@
             function load(/** @type {ImageData} */ src) {
                 canvas.width = src.width;
                 canvas.height = src.height;
-                put(src);
                 canvasScale = 1;
+                put(src);
                 centerCanvasOnWorkspace();
             }
             function centerCanvasOnWorkspace() {
@@ -218,10 +223,6 @@
             function getImageData() {
                 return canvasImageData;
             }
-            workspace.addEventListener("wheel", mouseZoom, { passive: false });
-            workspace.addEventListener("pointermove", (ev) => { pointerSave(ev); mousePan(ev); });
-            window.addEventListener("resize", () => posit());
-            return { load, put, pointer, getImageData };
         })();
 
         const file = (function File() {
@@ -233,7 +234,7 @@
                 request.onerror = ev => console.error("Error opening IndexedDB:", ev);
                 request.onupgradeneeded = ev => {
                     console.warn("Local IndexedDB not found. Creating local persistent data store.", ev);
-                    upgrading = true
+                    upgrading = true;
                     request.result.createObjectStore("persistImd");
                 };
                 request.onsuccess = ev => {
@@ -289,7 +290,6 @@
             }
             return {};
         })();
-
     </script>
 </body>
 
