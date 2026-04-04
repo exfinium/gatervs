@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="version" content="gater.vss.0.7.0">
+    <meta name="version" content="gater.vss.0.7.1">
     <meta name="version-notes" content="Implemented IndexedDB support. Added orch module to coordinate other modules.">
     <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQAQMAAAAlPW0iAAAABlBMVEUAAAD///+l2
         Z/dAAAAGElEQVQIW2NgAAO7GjDigSKoIIwLkQUDAG+qBKVbIwGvAAAAAElFTkSuQmCC">
@@ -230,31 +230,28 @@
                 let upgrading = false;
                 request.onerror = ev => console.error("Error opening IndexedDB:", ev);
                 request.onupgradeneeded = ev => {
-                    upgrading = true;
-                    const result = request.result;
-                    if (!result.objectStoreNames.contains("persistImd")) {
-                        result.createObjectStore("persistImd");
-                    }
+                    console.warn("Local IndexedDB not found. Creating local persistent data store.", ev);
+                    upgrading = true
+                    request.result.createObjectStore("persistImd");
                 };
                 request.onsuccess = ev => {
                     db = request.result;
                     if (upgrading) {
-                        console.warn("Database upgrade completed. Loading default art.");
+                        console.info("Database upgrade complete. Loading default art.", ev);
                         const imd = loadTestPattern();
                         dbSetPersistImd1(imd);
                         orch.load(imd);
                     } else {
+                        console.info("Database opened successfully. Loading saved art", db);
                         dbGetPersistImd1().onsuccess = ev => {
                             const imd = /**@type {ImageData}*/(/**@type {IDBRequest}*/(ev.target).result);
                             if (imd instanceof ImageData) {
                                 orch.load(imd);
-                                console.info("Loaded existing image data from local IndexedDB.");
                             } else {
-                                console.error("No persisted image data found in database.", ev);
+                                console.error("No image data found in database. Possible corruption.", ev);
                             }
                         };
                     }
-                    console.info(db);
                 };
             })();
             function dbGet(storeName, key) {
@@ -285,6 +282,7 @@
             }
             return {};
         })();
+
         const orch = (function Orch() {
             // file module will call load() with initial image data once it's ready
             function load(/**@type {ImageData} */ imd) {
