@@ -3,8 +3,8 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="version" content="gater.vss.0.6.0">
-    <meta name="version-notes" content="Streamlined positioning around posit().">
+    <meta name="version" content="gater.vss.0.7.0">
+    <meta name="version-notes" content="Implemented IndexedDB support. Added orch module to coordinate other modules.">
     <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQAQMAAAAlPW0iAAAABlBMVEUAAAD///+l2
         Z/dAAAAGElEQVQIW2NgAAO7GjDigSKoIIwLkQUDAG+qBKVbIwGvAAAAAElFTkSuQmCC">
     <title>gater</title>
@@ -99,7 +99,7 @@
 
     <script>
         // @ts-check
-        const show = (function makeShow() {
+        const show = (function Show() {
             const canvas = /**@type {HTMLCanvasElement}*/(document.getElementById("maincanvas"));
             const context = /**@type {CanvasRenderingContext2D}*/(canvas.getContext("2d", { alpha: false }));
             const workspace = /**@type {HTMLElement}*/(canvas.parentElement);
@@ -214,26 +214,85 @@
                     context.putImageData(canvasImageData, 0, 0);
                 }
             }
+            function getImageData() {
+                return canvasImageData;
+            }
             workspace.addEventListener("wheel", mouseZoom, { passive: false });
             workspace.addEventListener("pointermove", (ev) => { pointerSave(ev); mousePan(ev); });
             window.addEventListener("resize", () => posit());
-            return { load, put, pointer };
+            return { load, put, pointer, getImageData };
         })();
-        const file = (function makeFile() {
+
+        const file = (function File() {
+            let /**@type {IDBDatabase}*/db
+            (function DB() {
+                const request = indexedDB.open("gaterdb", 1);
+                let upgrading = false;
+                request.onerror = ev => console.error("Error opening IndexedDB:", ev);
+                request.onupgradeneeded = ev => {
+                    upgrading = true;
+                    const result = request.result;
+                    if (!result.objectStoreNames.contains("persistImd")) {
+                        result.createObjectStore("persistImd");
+                    }
+                };
+                request.onsuccess = ev => {
+                    db = request.result;
+                    if (upgrading) {
+                        console.warn("Database upgrade completed. Loading default art.");
+                        const imd = loadTestPattern();
+                        dbSetPersistImd1(imd);
+                        orch.load(imd);
+                    } else {
+                        dbGetPersistImd1().onsuccess = ev => {
+                            const imd = /**@type {ImageData}*/(/**@type {IDBRequest}*/(ev.target).result);
+                            if (imd instanceof ImageData) {
+                                orch.load(imd);
+                                console.info("Loaded existing image data from local IndexedDB.");
+                            } else {
+                                console.error("No persisted image data found in database.", ev);
+                            }
+                        };
+                    }
+                    console.info(db);
+                };
+            })();
+            function dbGet(storeName, key) {
+                const request = db.transaction(storeName, 'readonly').objectStore(storeName).get(key);
+                request.onerror = e => console.error(`Error getting key ${key} from store ${storeName}:`, request.error);
+                return request;
+            }
+            function dbPut(storeName, key, value) {
+                const request = db.transaction(storeName, 'readwrite').objectStore(storeName).put(value, key);
+                request.onerror = () => console.error(`Error putting key ${key} into store ${storeName}:`, request.error);
+                return request;
+            }
+            function dbGetPersistImd1() {
+                return /**@type {IDBRequest<ImageData>}*/(dbGet('persistImd', 1));
+            }
+            function dbSetPersistImd1(imd) {
+                return dbPut('persistImd', 1, imd);
+            }
+
             function loadTestPattern() {
                 const testPattern = /**@type {HTMLImageElement}*/(document.getElementById("testpattern"));
                 const bgContext = /**@type {CanvasRenderingContext2D}*/(document.createElement("canvas").getContext("2d"));
                 bgContext.canvas.width = testPattern.naturalWidth;
                 bgContext.canvas.height = testPattern.naturalHeight;
                 bgContext.drawImage(testPattern, 0, 0);
-                show.load(bgContext.getImageData(0, 0, bgContext.canvas.width, bgContext.canvas.height));
+                const imd = bgContext.getImageData(0, 0, bgContext.canvas.width, bgContext.canvas.height);
+                return imd;
             }
-            function init() {
-                loadTestPattern();
-            }
-            return {init};
+            return {};
         })();
-        file.init();
+        const orch = (function Orch() {
+            // file module will call load() with initial image data once it's ready
+            function load(/**@type {ImageData} */ imd) {
+                show.load(imd);
+            }
+            return { load };
+        })();
+
     </script>
 </body>
 
