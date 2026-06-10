@@ -109,10 +109,10 @@
             let dpr = devicePixelRatio;
             const addFrameTask = (function FrameTasks() {
                 const tasks = new Map();
-                requestAnimationFrame(run);
+                requestAnimationFrame(runFrameTask);
                 return (name, task) => tasks.set(name, task);
-                function run() {
-                    requestAnimationFrame(run);
+                function runFrameTask() {
+                    requestAnimationFrame(runFrameTask);
                     for (const [name, task] of tasks) task();
                     tasks.clear();
                 }
@@ -132,9 +132,9 @@
                 pointer = { ev, cnvX, cnvY, cnvHit, cnvIndex };
             }
             function mousePan(/** @type {PointerEvent} */ ev) {
+                const SENSITIVITY = 4;
+                const INVERT = true;
                 if (ev.type === "pointermove" && ev.buttons === 4) {
-                    const SENSITIVITY = 4;
-                    const INVERT = true;
                     const newLeft = canvasLeft + (INVERT ? -1 : 1) * ev.movementX * SENSITIVITY / dpr;
                     const newTop = canvasTop + (INVERT ? -1 : 1) * ev.movementY * SENSITIVITY / dpr;
                     posit(newLeft, newTop);
@@ -144,8 +144,8 @@
                 if (!ev.ctrlKey) {
                     ev.preventDefault();
                     if (ev.deltaY === 0) return;
-                    const z = ev.shiftKey ? 1.2 : 2;
-                    const zoomFactor = ev.deltaY < 0 ? z : 1 / z;
+                    const MAGNITUDE = ev.shiftKey ? 1.2 : 2; // magnitude 2 may be better for pixel perfection
+                    const zoomFactor = ev.deltaY < 0 ? MAGNITUDE : 1 / MAGNITUDE;
                     const newScale = canvasScale * zoomFactor;
                     if (newScale < 0.02 || newScale > 2000) return; // clamp zoom level
                     const newLeft = ev.clientX - (ev.clientX - canvasLeft) * zoomFactor;
