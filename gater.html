@@ -133,8 +133,10 @@
             }
             function mousePan(/** @type {PointerEvent} */ ev) {
                 if (ev.type === "pointermove" && ev.buttons === 4) {
-                    const newLeft = canvasLeft + ev.movementX * 4 / dpr;
-                    const newTop = canvasTop + ev.movementY * 4 / dpr;
+                    const SENSITIVITY = 4;
+                    const INVERT = true;
+                    const newLeft = canvasLeft + (INVERT ? -1 : 1) * ev.movementX * SENSITIVITY / dpr;
+                    const newTop = canvasTop + (INVERT ? -1 : 1) * ev.movementY * SENSITIVITY / dpr;
                     posit(newLeft, newTop);
                 }
             }
